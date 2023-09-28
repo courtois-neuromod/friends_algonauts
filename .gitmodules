@@ -1,0 +1,3 @@
+[submodule "giga_connectome"]
+	path = giga_connectome
+	url = git@github.com:SIMEXP/giga_connectome.git
