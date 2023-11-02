@@ -18,6 +18,7 @@ E.g.,
 sudo apt update
 sudo apt install ffmpeg
 
+TODO: remove links below for final script
 https://github.com/brain-bzh/cNeuromod_encoding_2020/blob/refactoring_V2/audio_utils.py
 https://github.com/courtois-neuromod/soundnetbrain_hear/blob/main/soundnetbrain_hear/soundnetbrain_hear.py
 https://librosa.org/doc/latest/generated/librosa.load.html#librosa.load
@@ -200,7 +201,7 @@ def main() -> None:
                     clip.audio.write_audiofile(wav_file)
 
                     audio_segments = []
-                    for start in np.arange(0, clip_duration, STUDY_PARAMS["tr"]) :
+                    for start in np.arange(0, clip_duration, STUDY_PARAMS["tr"]):
                         (audio_chunk, _) = librosa.core.load(
                             wav_file,
                             sr=args.rate_resample,
@@ -210,7 +211,7 @@ def main() -> None:
                             dtype=args.dtype,
                             )
                         # only include complete audio chunks
-                        if not audio_chunk.shape[-1] < n_frames :
+                        if not audio_chunk.shape[-1] < n_frames:
                             if mono:
                                 audio_segments.append(audio_chunk[:n_frames])
                             else:

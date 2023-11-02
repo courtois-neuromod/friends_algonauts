@@ -312,7 +312,8 @@ def main() -> None:
         f"pixels: h = {target_height}, w = {target_width}.\n",
     )
 
-    n_frames = int(STUDY_PARAMS["tr"] * STUDY_PARAMS["fps"])
+    n_frames_float = STUDY_PARAMS["tr"] * STUDY_PARAMS["fps"]
+    n_frames = int(n_frames_float)
     print(
         "Downsampled frames-per-second rate: "
         f"{STUDY_PARAMS['fps']/ args.time_downsample} (orig = 29.97 fps)",
@@ -354,7 +355,8 @@ def main() -> None:
         pv = f"_padval-{args.padvox_intensity}" if strategy == "pad" else ""
         out_file = (
             f"{args.odir}/friends_{season}_frames_h-{target_height}_"
-            f"w-{target_width}_{strategy.upper()}{pv}_ds-{args.time_downsample}{compress_details}.h5",
+            f"w-{target_width}_{strategy.upper()}{pv}_ds-{args.time_downsample}"
+            f"{compress_details}.h5",
         )[0]
 
         """
@@ -389,7 +391,7 @@ def main() -> None:
                         if args.verbose:
                             print(chunk_count, frame_count)
 
-                        while frame_count < int((chunk_count + 1) * n_frames):
+                        while frame_count < int((chunk_count + 1) * n_frames_float):
                             success, image = cap.read()
 
                             if success:
