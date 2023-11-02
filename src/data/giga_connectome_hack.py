@@ -285,59 +285,69 @@ def workflow_hack(args):
             kind="correlation", vectorize=False, discard_diagonal=False
         )
 
+        connectome_dir = f"{output_dir}/friends_connectome"
+        Path(connectome_dir).mkdir(parents=True, exist_ok=True)
+        connectome_path = (
+            f"{connectome_dir}/"
+            f"sub-{subject}_friends_connectome_atlas-MIST444"
+            f"_desc-{strategy['name']}.h5"
+        )
+
+        processed_episode_list = []
+
+        if Path(connectome_path).exists():
+            with h5py.File(connectome_path, 'r') as f:
+                processed_episode_list = [f for f in f.keys()]
+
         for img in tqdm(bold_list):
             try:
-                # process timeseries
-                denoised_img = denoise_nifti_voxel(
-                    strategy, subject_mask, standardize, smoothing_fwhm, img
-                )
                 # parse file name
                 sub, ses, task, space, ftype, appendix = img.split('/')[-1].split('_')
 
-                attribute_name = f"{sub}_{ses}_{task}_atlas-{atlas_name}_desc-{desc}"
-
-                if not denoised_img:
-                    time_series_atlas, correlation_matrix = None, None
-                    print(f"{attribute_name}: no volume after scrubbing")
-                    continue
-
-                # extract timeseries and connectomes
-                (
-                    correlation_matrix,
-                    time_series_atlas,
-                ) = generate_timeseries_connectomes(
-                    atlas_masker,
-                    denoised_img,
-                    subject_mask,
-                    correlation_measure,
-                    calculate_average_correlation,
-                )
-                #connectomes[desc].append(correlation_matrix)
-                connectome_dir = f"{output_dir}/friends_connectome"
-                Path(connectome_dir).mkdir(parents=True, exist_ok=True)
-                connectome_path = (
-                    f"{connectome_dir}/"
-                    f"sub-{subject}_friends_connectome_atlas-MIST444"
-                    f"_desc-{strategy['name']}.h5"
-                )
-
-                # dump to h5
-                flag =  "a" if Path(connectome_path).exists() else "w"
-                with h5py.File(connectome_path, flag) as f:
-                    if f"{task.split('-')[-1]}" in f.keys():
-                        group = f.create_group(f"{task.split('-')[-1]}_2")
-                    else:
-                        group = f.create_group(f"{task.split('-')[-1]}")
-
-                    timeseries_dset = group.create_dataset(
-                        #f"{attribute_name}_timeseries", data=time_series_atlas
-                        "timeseries", data=time_series_atlas
+                if not f"{task.split('-')[-1]}" in processed_episode_list:
+                    # process timeseries
+                    denoised_img = denoise_nifti_voxel(
+                        strategy, subject_mask, standardize, smoothing_fwhm, img
                     )
-                    timeseries_dset.attrs["RepetitionTime"] = 1.49
-                    group.create_dataset(
-                        #f"{attribute_name}_connectome", data=correlation_matrix
-                        "connectome", data=correlation_matrix
+
+                    attribute_name = f"{sub}_{ses}_{task}_atlas-{atlas_name}_desc-{desc}"
+
+                    if not denoised_img:
+                        time_series_atlas, correlation_matrix = None, None
+                        print(f"{attribute_name}: no volume after scrubbing")
+                        continue
+
+                    # extract timeseries and connectomes
+                    (
+                        correlation_matrix,
+                        time_series_atlas,
+                    ) = generate_timeseries_connectomes(
+                        atlas_masker,
+                        denoised_img,
+                        subject_mask,
+                        correlation_measure,
+                        calculate_average_correlation,
                     )
+
+                    # Remove last TR from run where it stopped one run short for sub-06
+                    if f"{task.split('-')[-1]}" == 's01e12a':
+                        time_series_atlas = time_series_atlas[:471, :]
+
+                    # dump to h5
+                    flag =  "a" if Path(connectome_path).exists() else "w"
+                    with h5py.File(connectome_path, flag) as f:
+                        if not f"{task.split('-')[-1]}" in f.keys():
+                            group = f.create_group(f"{task.split('-')[-1]}")
+
+                            timeseries_dset = group.create_dataset(
+                                "timeseries", data=time_series_atlas
+                            )
+                            timeseries_dset.attrs["RepetitionTime"] = 1.49
+
+                            #group.create_dataset(
+                            #    "connectome", data=correlation_matrix
+                            #)
+
             except:
                 print(f"could not process file {img}" )
 
