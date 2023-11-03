@@ -356,8 +356,8 @@ def main() -> None:
         out_file = (
             f"{args.odir}/friends_{season}_frames_h-{target_height}_"
             f"w-{target_width}_{strategy.upper()}{pv}_ds-{args.time_downsample}"
-            f"{compress_details}.h5",
-        )[0]
+            f"{compress_details}.h5"
+        )
 
         """
         To re-launch an interrupted script

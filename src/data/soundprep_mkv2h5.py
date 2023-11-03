@@ -175,8 +175,8 @@ def main() -> None:
 
         out_file = (
             f"{args.odir}/friends_{season}_audio_sr-{args.rate_resample}"
-            f"{is_mono}_{compress_details}.h5",
-        )[0]
+            f"{is_mono}_{compress_details}.h5"
+        )
 
         Path(f"{args.odir}/wav").mkdir(parents=True, exist_ok=True)
         """

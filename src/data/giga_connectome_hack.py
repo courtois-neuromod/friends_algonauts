@@ -28,6 +28,26 @@ from giga_connectome.denoise import is_ica_aroma, denoise_nifti_voxel
 from giga_connectome.mask import _check_mask_affine, _get_consistent_masks
 from giga_connectome import utils
 
+"""
+This script is a custom adapatation of the giga_connectome library
+which extracts denoised time series and computes connectomes from
+fMRI BOLD data using brain parcellations.
+
+Source:
+https://github.com/SIMEXP/giga_connectome/tree/main
+"""
+# grey matter group mask is only supplied in MNI152NLin2009c(A)sym
+STUDY_PARAMS = {
+    "template": "MNI152NLin2009cAsym",
+    "templateflow_dir": "atlases/atlas-MIST",
+    "gm_res": "02",
+    "n_iter": 2,
+    "desc": "444",
+    "atlas_name": "MIST",
+    "atlas_type": "dseg",
+    "calcul_avgcorr": False,
+}
+
 
 def get_arguments(argv=None):
     """Entry point."""
@@ -39,11 +59,11 @@ def get_arguments(argv=None):
         ),
     )
     parser.add_argument(
-        "bids_dir",
+        "work_dir",
         action="store",
         type=Path,
-        help="The directory with the input dataset (e.g. fMRIPrep derivative)"
-        "formatted according to the BIDS standard.",
+        help="The directory with the source code and input dataset "
+        "(e.g. fMRIPrep derivative) formatted according to the BIDS standard.",
     )
     parser.add_argument(
         "output_dir",
@@ -62,22 +82,6 @@ def get_arguments(argv=None):
         "subjects should be analyzed. Multiple participants can be specified "
         "with a space separated list.",
         nargs="+",
-    )
-    parser.add_argument(
-        "-w",
-        "--work-dir",
-        action="store",
-        type=Path,
-        default=Path("work").absolute(),
-        help="Path where intermediate results should be stored.",
-    )
-    parser.add_argument(
-        "--atlas",
-        help="The choice of atlas for time series extraction. Default atlas "
-        "choices are: 'Schaefer20187Networks, 'MIST', 'DiFuMo'. User can pass "
-        "a path to a json file containing configuration for their own choice "
-        "of atlas. The default is 'MIST'.",
-        default="MIST",
     )
     parser.add_argument(
         "--denoise-strategy",
@@ -104,27 +108,6 @@ def get_arguments(argv=None):
         default=5.0,
     )
     parser.add_argument(
-        "--reindex-bids",
-        help="Reindex BIDS data set, even if layout has already been created.",
-        action="store_true",
-    )
-    parser.add_argument(
-        "--bids-filter-file",
-        type=Path,
-        help="A JSON file describing custom BIDS input filters using PyBIDS."
-        "We use the same format as described in fMRIPrep documentation: "
-        "https://fmriprep.org/en/latest/faq.html#"
-        "how-do-i-select-only-certain-files-to-be-input-to-fmriprep"
-        "However, the query filed should always be 'bold'",
-    )
-    parser.add_argument(
-        "--calculate-intranetwork-average-correlation",
-        help="Calculate average correlation within each network. This is a "
-        "python implementation of the matlab code from the NIAK connectome "
-        "pipeline (option A). The default is False.",
-        action="store_true",
-    )
-    parser.add_argument(
         "--compression",
         type=str,
         default=None,
@@ -149,38 +132,63 @@ def workflow_hack(args):
 
     print(vars(args))
     # set file paths
-    bids_dir = args.bids_dir
+    bids_dir = f"{args.work_dir}/data/friends"
     output_dir = args.output_dir
-    working_dir = args.work_dir
     # check output path
     output_dir.mkdir(parents=True, exist_ok=True)
-    working_dir.mkdir(parents=True, exist_ok=True)
 
     standardize = utils.parse_standardize_options(args.standardize)
     smoothing_fwhm = args.smoothing_fwhm
-    calculate_average_correlation = (
-        args.calculate_intranetwork_average_correlation
-    )
-
     subjects = utils.get_subject_lists(args.participant_label, bids_dir)
     strategy = get_denoise_strategy(args.denoise_strategy)
 
-    # get template information; currently we only support the fmriprep defaults
-    template = ("MNI152NLin2009cAsym")
+    # currently we only support the fmriprep defaults
+    template = STUDY_PARAMS["template"]
+    mask_dir = Path(f"{output_dir}/subject_masks/tpl-{template}")
+    mask_dir.mkdir(exist_ok=True, parents=True)
 
-    comp_args = {}
+    # preprocessed data do not need high resolution
+    gm_res = STUDY_PARAMS["gm_res"]
+    n_iter = STUDY_PARAMS["n_iter"]
+    templateflow_dir = Path(f'{args.work_dir}/{STUDY_PARAMS["templateflow_dir"]}')
+    mni_gm_path = (
+        f"{templateflow_dir}/tpl-{template}/"
+        f"tpl-{template}_res-{gm_res}_label-GM_probseg.nii.gz",
+        )
+
+    desc = STUDY_PARAMS["desc"]
+    atlas_name = STUDY_PARAMS["atlas_name"]
+    atlas_type = STUDY_PARAMS["atlas_type"]
+
+    parcellation_name = (
+        f"{templateflow_dir}/tpl-MNI152NLin2009bAsym/"
+        f"tpl-MNI152NLin2009bAsym_res-03_atlas-BASC_desc-{desc}_{atlas_type}.nii.gz"
+    )
+
+    calculate_average_correlation = STUDY_PARAMS["calcul_avgcorr"]
+
+    compression_args = {}
     if args.compression is not None:
-        comp_args["compression"] = args.compression
+        compression_args["compression"] = args.compression
         if args.compression == "gzip":
-            comp_args["compression_opts"] = args.compression_opts
+            compression_args["compression_opts"] = args.compression_opts
 
     for subject in subjects:
         '''
-        List subject's bold and brain mask files
+        Compile list of subject's bold and brain mask files
         '''
-        found_mask_list = sorted(glob.glob(f"{bids_dir}/sub-{subject}/ses-0*/func/*{template}_desc-brain_mask.nii.gz"))
+        found_mask_list = sorted(
+            glob.glob(
+                f"{bids_dir}/sub-{subject}/"
+                f"ses-0*/func/*{template}_"
+                "desc-brain_mask.nii.gz",
+                ),
+            )
         if exclude := _check_mask_affine(found_mask_list, verbose=2):
-            found_mask_list, __annotations__ = _get_consistent_masks(found_mask_list, exclude)
+            found_mask_list, __annotations__ = _get_consistent_masks(
+                found_mask_list,
+                exclude,
+                )
             print(f"Remaining: {len(found_mask_list)} masks")
 
         bold_list = []
@@ -195,11 +203,7 @@ def workflow_hack(args):
         '''
         Generate subject-specific grey matter mask from all found sessions
         '''
-        templateflow_dir = Path("/project/rrg-pbellec/mstlaure/friends_algonauts/atlases/atlas-MIST/")
-        if templateflow_dir.exists():
-            os.environ["TEMPLATEFLOW_HOME"] = str(templateflow_dir.resolve())
-        import templateflow
-        # grey matter group mask is only supplied in MNI152NLin2009c(A)sym
+        # grey matter multi-session subject mask in MNI152NLin2009cAsym
         subject_epi_mask = compute_multi_epi_mask(
             mask_list,
             lower_cutoff=0.2,
@@ -220,24 +224,15 @@ def workflow_hack(args):
             f"\nshape: {subject_epi_mask.shape}"
         )
 
-        # preprocessed data don't need high res
-        gm_res = "02"
-        n_iter = 2
-
-        #mni_gm_path = templateflow.api.get(
-        #    template,
-        #    raise_empty=True,
-        #    label="GM",
-        #    resolution=gm_res,
-        #)
-        mni_gm_path = f"{templateflow_dir}/tpl-{template}/tpl-{template}_res-{gm_res}_label-GM_probseg.nii.gz"
-
-        mni_gm = resample_to_img(
-            source_img=mni_gm_path,
-            target_img=subject_epi_mask,
-            interpolation="continuous",
+        mni_gm = nib.squeeze_image(
+            resample_to_img(
+                source_img=mni_gm_path,
+                target_img=subject_epi_mask,
+                interpolation="continuous",
+            ),
         )
-        # the following steps are take from
+
+        # the following steps are adapted from
         # nilearn.images.fetch_icbm152_brain_gm_mask
         mni_gm_data = get_data(mni_gm)
         # this is a probalistic mask, getting one fifth of the values
@@ -245,31 +240,23 @@ def workflow_hack(args):
         mni_gm_mask = binary_closing(mni_gm_mask, iterations=n_iter)
         mni_gm_mask_img = new_img_like(mni_gm, mni_gm_mask)
 
-        # now we combine both masks into one
-        subject_mask_nii = math_img("img1 & img2", img1=subject_epi_mask, img2=mni_gm_mask_img)
+        # combine both masks into one
+        subject_mask_nii = math_img(
+            "img1 & img2",
+            img1=subject_epi_mask,
+            img2=mni_gm_mask_img,
+            )
 
-        #mask_dir = Path(f"{working_dir}/subject_masks/tpl-{template}")
-        mask_dir = Path(f"{output_dir}/subject_masks/tpl-{template}")
-        mask_dir.mkdir(exist_ok=True, parents=True)
         current_file_name = (
-            f"tpl-{template}_res-dataset_label-GM_desc-sub-{subject}_mask.nii.gz"
+            f"tpl-{template}_res-dataset_label"
+            f"-GM_desc-sub-{subject}_mask.nii.gz"
         )
-        subject_mask = mask_dir / current_file_name
+        subject_mask = f"{mask_dir}/{current_file_name}"
         nib.save(subject_mask_nii, subject_mask)
 
         '''
-        Resample atlas to subject grey matter mask
+        Resample parcellation atlas to subject grey matter mask
         '''
-        desc = "444"
-        atlas_name = "MIST"
-        atlas_type = "dseg"
-
-        parcellation_name = (
-            "/project/rrg-pbellec/mstlaure/friends_algonauts/"
-            f"atlases/atlas-{atlas_name}/"
-            "tpl-MNI152NLin2009bAsym/"
-            f"tpl-MNI152NLin2009bAsym_res-03_atlas-BASC_desc-{desc}_dseg.nii.gz"
-        )
         parcellation = nib.load(parcellation_name)
         parcellation_resampled = resample_to_img(
             #parcellation_name, subject_mask, interpolation="nearest"  # load from file paths
@@ -285,12 +272,9 @@ def workflow_hack(args):
         save_parcel_path = mask_dir / filename
         nib.save(parcellation_resampled, save_parcel_path)
 
-        #resampled_atlases = [save_parcel_path]
-
         '''
-        Generate subject-level connectomes
+        Generate subject-level time series
         '''
-        #atlas_maskers, connectomes = {}, {}
         atlas_path = Path(save_parcel_path)
 
         if atlas_type == "dseg":
@@ -299,18 +283,16 @@ def workflow_hack(args):
             )
         elif atlas_type == "probseg":
             atlas_masker = NiftiMapsMasker(maps_img=atlas_path, standardize=False)
-        #atlas_maskers[desc] = atlas_masker
-        #connectomes[desc] = []
 
         correlation_measure = ConnectivityMeasure(
             kind="correlation", vectorize=False, discard_diagonal=False
         )
 
-        connectome_dir = f"{output_dir}/friends_connectome"
+        connectome_dir = f"{output_dir}/friends_timeseries"
         Path(connectome_dir).mkdir(parents=True, exist_ok=True)
         connectome_path = (
             f"{connectome_dir}/"
-            f"sub-{subject}_friends_connectome_atlas-MIST444"
+            f"sub-{subject}_friends_BOLDtimeseries_atlas-{atlas_name}{desc}"
             f"_desc-{strategy['name']}.h5"
         )
 
@@ -324,6 +306,7 @@ def workflow_hack(args):
             try:
                 # parse file name
                 sub, ses, task, space, ftype, appendix = img.split('/')[-1].split('_')
+                print(sub, task)
 
                 if not f"{task.split('-')[-1]}" in processed_episode_list:
                     # process timeseries
@@ -350,7 +333,7 @@ def workflow_hack(args):
                         calculate_average_correlation,
                     )
 
-                    # Remove last TR from run where it stopped one run short for sub-06
+                    # Remove last TR from run that stopped one run short for sub-06
                     if f"{task.split('-')[-1]}" == 's01e12a':
                         time_series_atlas = time_series_atlas[:471, :]
 
@@ -363,13 +346,9 @@ def workflow_hack(args):
                             timeseries_dset = group.create_dataset(
                                 "timeseries",
                                 data=time_series_atlas,
-                                **comp_args,
+                                **compression_args,
                             )
                             timeseries_dset.attrs["RepetitionTime"] = 1.49
-
-                            #group.create_dataset(
-                            #    "connectome", data=correlation_matrix
-                            #)
 
             except:
                 print(f"could not process file {img}" )
