@@ -124,6 +124,21 @@ def get_arguments(argv=None):
         "pipeline (option A). The default is False.",
         action="store_true",
     )
+    parser.add_argument(
+        "--compression",
+        type=str,
+        default=None,
+        choices=[None, "gzip", "lzf"],
+        help="Lossless compression applied to time series in .h5 file. Default is none.",
+    )
+    parser.add_argument(
+        "--compression_opts",
+        type=int,
+        default=4,
+        choices=range(0, 10),
+        help="Frame compression level in .h5 file. Value = [0-9]. "
+        "Only for lossless gzip compression.",
+    )
 
     args = parser.parse_args(argv)
 
@@ -152,6 +167,12 @@ def workflow_hack(args):
 
     # get template information; currently we only support the fmriprep defaults
     template = ("MNI152NLin2009cAsym")
+
+    comp_args = {}
+    if args.compression is not None:
+        comp_args["compression"] = args.compression
+        if args.compression == "gzip":
+            comp_args["compression_opts"] = args.compression_opts
 
     for subject in subjects:
         '''
@@ -340,7 +361,9 @@ def workflow_hack(args):
                             group = f.create_group(f"{task.split('-')[-1]}")
 
                             timeseries_dset = group.create_dataset(
-                                "timeseries", data=time_series_atlas
+                                "timeseries",
+                                data=time_series_atlas,
+                                **comp_args,
                             )
                             timeseries_dset.attrs["RepetitionTime"] = 1.49
 
