@@ -123,9 +123,7 @@ def get_arguments(argv=None):
         "Only for lossless gzip compression.",
     )
 
-    args = parser.parse_args(argv)
-
-    return args
+    return parser.parse_args(argv)
 
 
 def workflow_hack(args):
@@ -273,7 +271,7 @@ def workflow_hack(args):
         nib.save(parcellation_resampled, save_parcel_path)
 
         '''
-        Generate subject-level time series
+        Generate run-level time series
         '''
         atlas_path = Path(save_parcel_path)
 
