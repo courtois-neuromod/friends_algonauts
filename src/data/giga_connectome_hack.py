@@ -130,7 +130,7 @@ def workflow_hack(args):
 
     print(vars(args))
     # set file paths
-    bids_dir = f"{args.work_dir}/data/friends"
+    bids_dir = f"{args.work_dir}/data/friends.fmriprep2"
     output_dir = args.output_dir
     # check output path
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -194,6 +194,7 @@ def workflow_hack(args):
         for fm in found_mask_list:
             sub, ses, task, space, ftype, appendix = fm.split('/')[-1].split('_')
             bpath = f"{bids_dir}/{sub}/{ses}/func/{sub}_{ses}_{task}_{space}_desc-preproc_bold.nii.gz"
+
             if Path(bpath).exists():
                 bold_list.append(bpath)
                 mask_list.append(fm)
@@ -286,7 +287,7 @@ def workflow_hack(args):
             kind="correlation", vectorize=False, discard_diagonal=False
         )
 
-        connectome_dir = f"{output_dir}/friends_timeseries"
+        connectome_dir = f"{output_dir}/timeseries"
         Path(connectome_dir).mkdir(parents=True, exist_ok=True)
         connectome_path = (
             f"{connectome_dir}/"

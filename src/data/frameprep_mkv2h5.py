@@ -75,18 +75,18 @@ def get_arguments() -> argparse.Namespace:
         '"Padding" resizing strategy',
     )
     parser.add_argument(
+        "--normalize",
+        type=bool,
+        action='store_true'
+        help="if True, normalizes pixel values (0 centered, range = [-0.5, 0.5]). "
+        "Default is False.",
+    )
+    parser.add_argument(
         "--seasons",
         default=None,
         nargs="+",
         help="List of seasons of .mkv files to process. If none is specified, "
         "all seasons will be processed.",
-    )
-    parser.add_argument(
-        "--dtype",
-        type=str,
-        default="float32",
-        help="Data type for final arrays (chunks of resized, "
-        "downsampled movie frames)",
     )
     parser.add_argument(
         "--compression",
@@ -294,6 +294,7 @@ def main() -> None:
     is 44, results in 1 kept movie frame per fMRI TR.
     """
     args = get_arguments()
+    dtype = "float32" if args.normalize else "uint8"
 
     print(vars(args))
     (
@@ -414,11 +415,11 @@ def main() -> None:
                             frames = (
                                 np.asarray(
                                     chunk_frames[:n_frames],
-                                    dtype=args.dtype,
+                                    dtype=dtype,
                                 )[:: args.time_downsample]
-                                / 255.0
-                                - 0.5
                             )
+                            if args.normalize:
+                                frames = (frames / 255.0) - 0.5
 
                             """pytorch / chainer input dimension order:
                             Channel x Frame x Height x Width
@@ -452,9 +453,9 @@ def main() -> None:
                                 ]
 
                             elif strategy == "pad":
-                                padvox_val = (
-                                    args.padvox_intensity / 255.0
-                                ) - 0.5
+                                padvox_val = args.padvox_intensity
+                                if args.normalize:
+                                    padvox_val = (padvox_val / 255.0) - 0.5
                                 full_array = np.full(
                                     (
                                         3,
@@ -463,7 +464,7 @@ def main() -> None:
                                         target_width,
                                     ),
                                     padvox_val,
-                                    dtype=args.dtype,
+                                    dtype=dtype,
                                 )
                                 edge = int(
                                     np.floor((target_height - rs_height) / 2),
