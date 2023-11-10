@@ -31,7 +31,7 @@ STUDY_PARAMS = {
     "tr": 1.49,
     "sr": 22050, # orig is 44100 for Friends
     "height": 224, #256,
-    # "crop_size": 224, orig pipeline resizes the height to 256 and width proportionally, then crops (square: 224x224)
+    # "crop_size": 224, orig pipeline resizes the height to 256 and width to 340, then crops (square: 224x224)
     # I resized to 224 and then crop along width to remove less info on the sides and none along the height
 }
 
@@ -99,9 +99,9 @@ def get_arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def extract_audio_features(odir, sr):
+def extract_audio_features(odir, season, sr):
     y,sr = librosa.load(
-        f"{odir}/temp/audio.mp3",
+        f"{odir}/temp/audio_{season}.mp3",
         sr=sr,
         mono=True,
     )
@@ -112,7 +112,7 @@ def extract_audio_features(odir, sr):
     return mfcc
 
 
-def extract_visual_features(odir, new_height, new_width, new_step):
+def extract_visual_features(odir, season, new_height, new_width, new_step):
 
     gc.set_threshold(100, 5, 5)
     gpu_id = 0
@@ -124,7 +124,7 @@ def extract_visual_features(odir, new_height, new_width, new_step):
     model_name  = 'i3d_resnet50_v1_kinetics400'
     num_segments = 1
     resume_params = ''
-    video_path = f"{odir}/temp/clip.mp4"
+    video_path = f"{odir}/temp/clip_{season}.mp4"
     #new_height = 256
     #new_width = 340 # for Friends, should be 384 to be proportional
 
@@ -209,7 +209,7 @@ def extract_visual_features(odir, new_height, new_width, new_step):
     if slowfast:
         sparse_samples = len(clip_input) // (num_segments * num_crop)
         clip_input = np.stack(clip_input, axis=0)
-        clip_input = clip_input.reshape((-1,) + (sparse_sampels, 3, input_size, input_size))
+        clip_input = clip_input.reshape((-1,) + (sparse_samples, 3, input_size, input_size))
         clip_input = np.transpose(clip_input, (0, 2, 1, 3, 4))
     else:
         clip_input = np.stack(clip_input, axis=0)
@@ -285,7 +285,6 @@ def main() -> None:
                 compress_details += f"_level-{args.compression_opts}"
                 comp_args["compression_opts"] = args.compression_opts
 
-        pv = f"_padval-{args.padvox_intensity}" if strategy == "pad" else ""
         out_file = (
             f"{args.odir}/friends_{season}_features_visual_audio_{compress_details}.h5"
         )
@@ -315,11 +314,12 @@ def main() -> None:
 
                     for start in start_times:
                         clip_chunk = clip.subclip(start, start + STUDY_PARAMS["tr"])
-                        clip_chunk.write_videofile(f"{args.odir}/temp/clip.mp4",verbose=False)
-                        clip_chunk.audio.write_audiofile(f"{args.odir}/temp/audio.mp3",verbose=False)
+                        clip_chunk.write_videofile(f"{args.odir}/temp/clip_{season}.mp4",verbose=False)
+                        clip_chunk.audio.write_audiofile(f"{args.odir}/temp/audio_{season}.mp3",verbose=False)
 
                         chunk_visual_feat = extract_visual_features(
                             args.odir,
+                            season,
                             rs_height,
                             rs_width,
                             args.time_downsample,
@@ -328,6 +328,7 @@ def main() -> None:
                         audio_features.append(
                             extract_audio_features(
                                 args.odir,
+                                season,
                                 STUDY_PARAMS["sr"],
                             ),
                         )
@@ -353,7 +354,7 @@ def main() -> None:
                                 ),
                             **comp_args,
                         )
-                        
+
 
 if __name__ == "__main__":
     sys.exit(main())
