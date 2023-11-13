@@ -16,8 +16,8 @@ def get_arguments() -> argparse.Namespace:
     """Entry point."""
     parser = argparse.ArgumentParser(
         description=(
-            "Extracts downsampled soundwaves from movie files (.mkv)"
-            " and exports them as .h5 files.",
+            "Converts align word onset times and durations"
+            " from seconds to TRs and exports them as .tsv files.",
         ),
     )
     parser.add_argument(
@@ -31,14 +31,14 @@ def get_arguments() -> argparse.Namespace:
         "--odir",
         type=str,
         required=True,
-        help="Path to output directory where season-specific"
-        " .h5 frame files will be saved.",
+        help="Path to output directory where new .tsv "
+        " files will be saved.",
     )
     parser.add_argument(
         "--seasons",
         default=None,
         nargs="+",
-        help="List of seasons of .mkv files to process. If none is specified, "
+        help="List of seasons of .tsv files to process. If none is specified, "
         "all seasons will be processed.",
     )
 
