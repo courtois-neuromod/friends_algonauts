@@ -295,7 +295,7 @@ def train_ridgeReg(
         alphas=alphas,
         fit_intercept=True,
         #normalize=False,
-        cv=cv
+        cv=cv,
     )
 
     return model.fit(X, y)
@@ -304,71 +304,34 @@ def train_ridgeReg(
 def pairwise_acc(
     target: np.array,
     predicted: np.array,
-    distance: bool=False,
+    use_distance: bool = False,
 ) -> float:
-	""".
+    """.
 
     Computes Pairwise accuracy
     Adapted from: https://github.com/jashna14/DL4Brain/blob/master/src/evaluate.py
-	Args:
-		target: Numpy array of shape (num_samples x num features) - Actual Targets
-		predicted: Numpy array of shape (num_samples x num features) - Predicted Targets
-	Return:
-		float: The pairwise accuracy
-
     """
-	true = 0
-	total = 0
-	for i in range(0,len(target)):
-		for j in range(i+1, len(target)):
-			total += 1
+    true_count = 0
+    total = 0
 
-			t1 = target[i]
-			t2 = target[j]
-			p1 = predicted[i]
-			p2 = predicted[j]
+    for i in range(0,len(target)):
+        for j in range(i+1, len(target)):
+            total += 1
 
-            if distance:
-    			if cosine(t1,p1) + cosine(t2,p2) < cosine(t1,p2) + cosine(t2,p1):
-    				true += 1
+            t1 = target[i]
+            t2 = target[j]
+            p1 = predicted[i]
+            p2 = predicted[j]
+
+            if use_distance:
+                if cosine(t1,p1) + cosine(t2,p2) < cosine(t1,p2) + cosine(t2,p1):
+                    true_count += 1
+
             else:
                 if pearsonr(t1,p1)[0] + pearsonr(t2,p2)[0] > pearsonr(t1,p2)[0] + pearsonr(t2,p1)[0]:
-                    true += 1
+                    true_count += 1
 
-	return (true/total)
-
-
-def pairwise_acc(
-    target: np.array,
-    predicted: np.array,
-) -> float:
-	""".
-
-    Computes Pairwise accuracy
-    Adapted from: https://github.com/jashna14/DL4Brain/blob/master/src/evaluate.py
-
-    Args:
-		target: Numpy array of shape (num_samples x D) - Actual Targets
-		predicted: Numpy array of shape (num_samples x D) - Predicted Targets
-	Return:
-		float: The Pairwise accuracy
-
-    """
-	true = 0
-	total = 0
-	for i in range(0,len(target)):
-		for j in range(i+1, len(target)):
-			total += 1
-
-			t1 = target[i]
-			t2 = target[j]
-			p1 = predicted[i]
-			p2 = predicted[j]
-
-			if pearsonr(t1,p1)[0] + pearsonr(t2,p2)[0] > pearsonr(t1,p2)[0] + pearsonr(t2,p1)[0]:
-				true += 1
-
-	return (true/total)
+    return (true/total)
 
 
 def pearson_corr(
