@@ -466,7 +466,7 @@ def test_ridgeReg(
 
     # export parcelwise scores as .nii images for visualization
     if adir is not None:
-        export_images(odir, adir, subject, results_dict)
+        export_images(odir, adir, subject, res_dict)
 
 
 def main() -> None:
