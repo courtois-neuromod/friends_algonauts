@@ -14,15 +14,6 @@ import scipy.stats as stats
 from scipy.stats import pearsonr
 from sklearn.linear_model import RidgeCV
 from sklearn.model_selection import GroupKFold
-#from sklearn.model_selection import train_test_split
-from tqdm import tqdm
-"""
-TODO: remove links when final
-Dev Links:
-https://github.com/jashna14/DL4Brain
-https://colab.research.google.com/drive/1w1a08G9zNVNANtiEZNCdMAi5M3eO_yew
-https://colab.research.google.com/drive/10aKI0NcSqWbwxOgvBrcv6xk-LXhKNM2u?usp=sharing#scrollTo=eff7f886
-"""
 
 
 def get_arguments() -> argparse.Namespace:
@@ -138,12 +129,6 @@ def split_episodes(
     train_set = sorted([x for x in sub_h5 if x[:3] not in ['s03', val_season]])
 
     sub_h5.close()
-
-    #train_set, val_set = train_test_split(
-    #                            trainval_set,
-    #                            test_size=0.20,
-    #                            random_state=random_state,
-    #                            )
 
     # Assign consecutive train set episodes to cross-validation groups
     lts = len(train_set)
