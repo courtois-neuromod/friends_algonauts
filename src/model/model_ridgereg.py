@@ -339,6 +339,7 @@ def export_images(
     odir: str,
     adir: str,
     subject: str,
+    modal_names: str,
     results: dict,
 ) -> None:
     """.
@@ -363,7 +364,7 @@ def export_images(
         )
         nib.save(
             nii_file,
-            f"{odir}/{subject}_MIST444_{s}_R2.nii.gz",
+            f"{odir}/{subject}_MIST444_RidgeReg{modal_names}_R2_{s}.nii.gz",
         )
 
     return
@@ -377,6 +378,7 @@ def test_ridgeReg(
     y_train: np.array,
     x_val: np.array,
     y_val: np.array,
+    modalities: list,
     adir: str=None,
 ) -> None:
     """.
@@ -409,12 +411,15 @@ def test_ridgeReg(
 
     # export RR results
     Path(f"{odir}").mkdir(parents=True, exist_ok=True)
-    with open(f"{odir}/{subject}_ridgeReg_result.json", 'w') as fp:
+    m = ""
+    for modal in modalities:
+        m += f"_{modal}"
+    with open(f"{odir}/{subject}_ridgeReg{m}_result.json", 'w') as fp:
         json.dump(res_dict, fp)
 
     # export parcelwise scores as .nii images for visualization
     if adir is not None:
-        export_images(odir, adir, subject, res_dict)
+        export_images(odir, adir, subject, m, res_dict)
 
 
 def main() -> None:
@@ -485,6 +490,7 @@ def main() -> None:
         y_train,
         x_val,
         y_val,
+        args.modalities,
         args.adir,
     )
 

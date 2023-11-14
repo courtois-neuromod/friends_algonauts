@@ -13,7 +13,7 @@ import numpy as np
 import mxnet as mx
 from mxnet import nd
 from mxnet.gluon.data.vision import transforms
-from gluoncv.data.transforms import video
+from gluoncv.data import transforms
 from gluoncv.model_zoo import get_model
 from gluoncv.model_zoo.action_recognition.i3d_resnet import I3D_ResNetV1
 from gluoncv.data import VideoClsCustom
@@ -24,7 +24,7 @@ import librosa
 import librosa.display
 #from moviepy.editor import *
 from moviepy.editor import VideoFileClip
-import torch
+#import torch
 from tqdm import tqdm
 
 # https://github.com/deepinsight/insightface/issues/694
@@ -155,7 +155,7 @@ def list_episodes(
 
 def set_output(
     season: str,
-    args: list,
+    args: argparse.Namespace,
 ) -> tuple:
     """.
 
@@ -172,12 +172,12 @@ def set_output(
 
     out_file = (
         f"{args.odir}/friends_{season}_features_"
-        f"visual_audio_{compress_details}.h5"
+        f"visual_audio{compress_details}.h5"
     )
 
     Path(f"{args.odir}/temp").mkdir(exist_ok=True, parents=True)
 
-    return comp_args, out_file[0]
+    return comp_args, out_file
 
 
 def extract_audio_features(
@@ -200,8 +200,16 @@ def extract_audio_features(
     return np.mean(librosa.feature.mfcc(y=y, sr=sr), axis = 1)
 
 
+def get_ctx():
+    gpu_id = 0
+    if gpu_id == -1:
+        return mx.cpu()
+    else:
+        return mx.gpu(gpu_id)
+
+
 def build_I3D_ResNet(
-    args: list,
+    context,
 ) -> I3D_ResNetV1:
     """.
 
@@ -211,11 +219,6 @@ def build_I3D_ResNet(
     """
     # set garbage collection threshold
     gc.set_threshold(100, 5, 5)
-    gpu_id = 0
-    if gpu_id == -1:
-        context = mx.cpu()
-    else:
-        context = mx.gpu(gpu_id)
 
     net = get_model(
             name = 'i3d_resnet50_v1_kinetics400',
@@ -227,14 +230,14 @@ def build_I3D_ResNet(
             ctx = context,
         )
     net.cast('float32')
-    #net.collect_params().reset_ctx(context)
-    net.eval()
+    net.collect_params().reset_ctx(context)
+    #net.eval()
 
     return net
 
 
 def get_resize_dims(
-    step: int,
+    new_step: int,
 ) -> tuple:
     """
     WIP. Set frame resizing parameters.
@@ -274,7 +277,7 @@ def get_resize_dims(
 def extract_visual_features(
     odir: str,
     season: str,
-    net: I3D_ResNetV1,
+    #net: I3D_ResNetV1,
     new_step: int,
 ) -> np.array:
     """.
@@ -291,10 +294,7 @@ def extract_visual_features(
 
     crop_size, rs_height, rs_width, new_length = get_resize_dims(new_step)
 
-    # resize and downsample frames
-    # https://github.com/dmlc/gluon-cv/blob/master/gluoncv/data/video_custom/classification.py#L12
-    # https://github.com/dmlc/gluon-cv/blob/567775619f3b97d47e7c360748912a4fd883ff52/gluoncv/data/video_custom/classification.py#L12
-    # https://github.com/dmlc/gluon-cv/blob/567775619f3b97d47e7c360748912a4fd883ff52/gluoncv/utils/filesystem.py#L24
+    # Resize and downsample frames
     video_utils = VideoClsCustom(
                                 root='',
                                 setting='',
@@ -335,9 +335,8 @@ def extract_visual_features(
             skip_offsets,
         )
 
-    # Normalize, down 3 -> 1 color channel (greyscale, ImageNet norms) and center crop
-    # https://github.com/dmlc/gluon-cv/blob/567775619f3b97d47e7c360748912a4fd883ff52/gluoncv/data/transforms/video.py#L82
-    transform_test = video.VideoGroupValTransform(
+    # Normalize with ImageNet norms (per color channel) and center crop
+    transform_test = transforms.video.VideoGroupValTransform(
         size = crop_size,
         mean = [0.485, 0.456, 0.406],
         std = [0.229, 0.224, 0.225],
@@ -356,13 +355,21 @@ def extract_visual_features(
         clip_input = np.transpose(clip_input, (0, 2, 1, 3, 4))
 
     if new_length == 1:
-        clip_input = np.squeeze(clip_input, axis=2)    # this is for 2D input case
+        clip_input = np.squeeze(clip_input, axis=2)
 
-    # Obtain features from pre-trained convnet for frame chunk
+    """
+    Obtain features from pre-trained convnet for frame chunk
+    https://github.com/dmlc/gluon-cv/blob/567775619f3b97d47e7c360748912a4fd883ff52/scripts/action-recognition/feat_extract_pytorch.py#L45C30-L45C30
+
+    TODO: set model to .eval() to freeze pre-trained params (bug?)
+    so that one model can process the whole dataset...
+    """
+    context = get_ctx()
     video_input = nd.array(clip_input).as_in_context(context)
-    # TODO: https://github.com/dmlc/gluon-cv/blob/567775619f3b97d47e7c360748912a4fd883ff52/scripts/action-recognition/feat_extract_pytorch.py#L45C30-L45C30
-    with torch.no_grad():
-        video_feat = net(video_input.astype('float32', copy=False))
+    net = build_I3D_ResNet(context)
+
+    #with torch.no_grad():
+    video_feat = net(video_input.astype('float32', copy=False))
 
     return np.squeeze(video_feat.asnumpy())
 
@@ -370,8 +377,8 @@ def extract_visual_features(
 def extract_features(
     season: str,
     mkv_path: str,
-    net: I3D_ResNetV1,
-    args: list,
+    #net: I3D_ResNetV1,
+    args: argparse.Namespace,
 ) -> tuple:
     """.
 
@@ -399,7 +406,7 @@ def extract_features(
             chunk_visual_feat = extract_visual_features(
                 args.odir,
                 season,
-                net,
+                #net,
                 args.time_downsample,
             )
             visual_features.append(chunk_visual_feat)
@@ -454,8 +461,8 @@ def save_features(
 
 def process_episodes(
     season: str,
-    net: I3D_ResNetV1,
-    args: list,
+    #net: I3D_ResNetV1,
+    args: argparse.Namespace,
 ) -> None:
     """.
 
@@ -472,7 +479,7 @@ def process_episodes(
         features = extract_features(
             season,
             mkv_path,
-            net,
+            #net,
             args,
         )
         save_features(
@@ -515,7 +522,7 @@ def main() -> None:
     print(vars(args))
 
     # Instantiate neural net to derive visual features
-    net = build_I3D_ResNet(args)
+    #net = build_I3D_ResNet(get_ctx())
 
     # Get list of seasons to process
     seasons = list_seasons(args.idir, args.seasons)
@@ -524,7 +531,7 @@ def main() -> None:
     for season in seasons:
         process_episodes(
             season,
-            net,
+            #net,
             args,
         )
 
