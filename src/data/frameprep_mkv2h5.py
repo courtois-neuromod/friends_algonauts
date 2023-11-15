@@ -76,8 +76,7 @@ def get_arguments() -> argparse.Namespace:
     )
     parser.add_argument(
         "--normalize",
-        type=bool,
-        action='store_true'
+        action='store_true',
         help="if True, normalizes pixel values (0 centered, range = [-0.5, 0.5]). "
         "Default is False.",
     )
@@ -113,130 +112,395 @@ def get_arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def set_target_dims(
+def validate_strategy(
     strategy: str,
-    target_height: int,
-    target_width: int = None,
-) -> (str, int, int, int, int):
-    """Validates resizing strategy and specified dims.
+    t_w: int,
+) -> None:
+    """.
 
-    Corrects strategy and dims if necessary.
-    Returns the intermediate (after resizing) and
-    final (as exported) frame height and width,
-    in pixels, according to specified resizing strategy.
-
-    Args:
-        strategy (str): user-specified resizing strategy.
-        target_height (int): final target heigh in pixels (required).
-        target_width (int): final target width in pixels. Default=None.
-
-    Returns: (
-        final_strategy (str): final resizing strategy,
-        intermediate_height (int): frame height after resizing,
-        intermediate_width (int): frame width after resizing,
-        final_height (int): saved frame height,
-        final_width (int): saved frame width,
-    )
+    Validate choice of strategy.
     """
-    if strategy != "custom" and target_width is not None:
-        print(
-            "Warning: frames will be resized to user-specified dimensions "
-            f"(height = {target_height}; width = {target_width}).",
-        )
-        print(
-            f'Resize strategy changed from "{strategy.upper()}" to "CUSTOM". '
-            "Final array height may not match width!",
-        )
-        final_strategy = "custom"
-    elif strategy == "custom" and target_width is None:
-        print(
-            "Warning: a target width needs to be specified to use the "
-            '"custom" resize strategy.',
-        )
-        print(
-            f'Resize strategy changed from "{strategy.upper()}" to '
-            '"PROPORTIONAL". Final array height =/= width!',
-        )
-        final_strategy = "proportional"
+    if strategy == "custom":
+        if t_w is None:
+            raise Exception(
+                "A target width needs to be specified with the CUSTOM strategy."
+            )
     else:
-        final_strategy = strategy
+        if t_w is not None:
+            raise Exception(
+                "The specified target width is incompatible with the "
+                f"{strategy.upper()} strategy."
+            )
 
+    return
+
+
+def set_target_dims(
+    args,
+) -> (str, tuple, tuple):
+    """.
+
+    Get post-resize and final frame dims.
+    Original frame dims: (h=480, w=720 pixels).
     """
-    Note that intermediate height and width reflect the frame
-    dimensions after the image is resized.
-
-    Final height and width reflect the saved frame dimensions,
-    following additional steps like cropping or padding.
-
-    Original frame dims = (height: 480, weidth: 720) pixels.
-    """
-    if final_strategy == "custom":
-        """
-        The CUSTOM resize strategy resizes the height and width
-        to user-specified dimensions.
-        """
-        intermediate_height = target_height
-        intermediate_width = target_width
-
-        final_height = intermediate_height
-        final_width = intermediate_width
-
-    elif final_strategy == "proportional":
-        """
-        The PROPORTIONAL resize strategy adjusts the target width
-        to the target height to maintain original frame proportions.
-        Output frames (arrays) are rectangular (height =/= width).
-        """
-        intermediate_height = target_height
-        intermediate_width = int((target_height * 720) / 480)
-
-        final_height = intermediate_height
-        final_width = intermediate_width
-
-    elif final_strategy == "squeeze":
-        """
-        The SQUEEZE resize strategies transform frames into
-        squared arrays (height == width). It introduces distortion
-        (squeezing along width) but no feature loss.
-        """
-        intermediate_height = target_height
-        intermediate_width = target_height
-
-        final_height = intermediate_height
-        final_width = intermediate_width
-
-    elif final_strategy == "crop":
-        """
-        The CROP resize strategies transform frames into
-        squared arrays (height == width). It introduces no distortion
-        but some feature loss on the left and right of the frame.
-        """
-        intermediate_height = target_height
-        intermediate_width = int((target_height * 720) / 480)
-
-        final_height = intermediate_height
-        final_width = final_height
-
-    elif final_strategy == "pad":
-        """
-        The PAD resize strategies transform frames into
-        squared arrays (height == width). It involves no distortion
-        and no feature loss, but requires additional storage for
-        empty pixels added to the top and bottom of the frame.
-        """
-        intermediate_height = int((target_height * 480) / 720)
-        intermediate_width = target_height
-
-        final_height = target_height
-        final_width = target_height
-
-    return (
-        final_strategy,
-        intermediate_height,
-        intermediate_width,
-        final_height,
-        final_width,
+    validate_strategy(
+        args.resize_strategy,
+        args.target_width,
     )
+
+    if args.resize_strategy == "custom":
+        return (
+            args.resize_strategy,
+            (args.target_height, args.target_width),
+            (args.target_height, args.target_width),
+        )
+
+    elif args.resize_strategy == "proportional":
+        return (
+            args.resize_strategy,
+            (args.target_height, int((args.target_height * 720) / 480)),
+            (args.target_height, int((args.target_height * 720) / 480)),
+        )
+
+    elif args.resize_strategy == "squeeze":
+        return (
+            args.resize_strategy,
+            (args.target_height, args.target_height),
+            (args.target_height, args.target_height),
+        )
+
+    elif args.resize_strategy == "crop":
+        return (
+            args.resize_strategy,
+            (args.target_height, int((args.target_height * 720) / 480)),
+            (args.target_height, args.target_height),
+        )
+
+    elif args.resize_strategy == "pad":
+        return (
+            args.resize_strategy,
+            (int((args.target_height * 480) / 720), args.target_height),
+            (args.target_height, args.target_height),
+        )
+    else:
+        raise Exception()
+
+
+def list_seasons(
+    idir: str,
+    verbose: int,
+    seasons: list=None,
+) -> list:
+    """.
+
+    List of seasons to process.
+    """
+    season_list = (
+        seasons if seasons is not None
+        else [x.split("/")[-1] for x in sorted(glob.glob(f"{idir}/s*"))]
+    )
+    if verbose:
+        print("Seasons : ", seasons)
+
+    return season_list
+
+
+def set_output(
+    season: str,
+    strategy: str,
+    target_dim: tuple,
+    args: argparse.Namespace,
+) -> tuple:
+    """.
+
+    Set output parameters.
+    """
+    compress_details = ""
+    comp_args = {}
+    if args.compression is not None:
+        compress_details = f"_{args.compression}"
+        comp_args["compression"] = args.compression
+        if args.compression == "gzip":
+            compress_details += f"_level-{args.compression_opts}"
+            comp_args["compression_opts"] = args.compression_opts
+
+    pv = f"_padval-{args.padvox_intensity}" if strategy == "pad" else ""
+    out_file = (
+        f"{args.odir}/friends_{season}_frames_h-{target_dim[0]}_"
+        f"w-{target_dim[1]}_{strategy.upper()}{pv}_ds-{args.time_downsample}"
+        f"{compress_details}.h5"
+    )
+
+    Path(f"{args.odir}").mkdir(exist_ok=True, parents=True)
+    dtype = "float32" if args.normalize else "uint8"
+
+    return dtype, comp_args, out_file
+
+
+def list_episodes(
+    idir: str,
+    season: str,
+    outfile: str,
+    verbose: int,
+) -> list:
+    """.
+
+    Compile season's list of episodes to process.
+    """
+    all_epi = [
+        x.split("/")[-1].split(".")[0][-7:]
+        for x in sorted(glob.glob(f"{idir}/{season}/friends_s*.mkv"))
+        if x.split("/")[-1].split(".")[0][-1] in ["a", "b", "c", "d"]
+    ]
+
+    if Path(outfile).exists():
+        season_h5_file = h5py.File(outfile, "r")
+        processed_epi = list(season_h5_file.keys())
+        season_h5_file.close()
+    else:
+        processed_epi = []
+
+    episode_list = [epi for epi in all_epi if epi not in processed_epi]
+
+    if verbose:
+        print("Processed episodes : ", processed_epi)
+        print("Episodes to process : ", episode_list)
+
+    return episode_list
+
+
+def pad_array(
+    chunk_array: np.array,
+    n_frames: int,
+    rs_dim: tuple,
+    target_dim: tuple,
+    dtype: str,
+    args: argparse.Namespace,
+) -> np.array:
+    """.
+
+    """
+    rs_height, rs_width = rs_dim
+    target_height, target_width = target_dim
+
+    padvox_val = args.padvox_intensity
+    if args.normalize:
+        padvox_val = (padvox_val / 255.0) - 0.5
+
+    full_array = np.full(
+        (
+            3,
+            int(np.ceil(n_frames / args.time_downsample)),
+            target_height,
+            target_width,
+        ),
+        padvox_val,
+        dtype=dtype,
+    )
+
+    edge = int(np.floor((target_height - rs_height) / 2))
+    full_array[:, :, edge : rs_height + edge, :, ] = chunk_array
+
+    return full_array
+
+
+def make_array(
+    chunk_frames: list,
+    strategy: str,
+    dtype: str,
+    rs_dim: tuple,
+    target_dim: tuple,
+    args: argparse.Namespace,
+) -> np.array:
+    """.
+
+    Extract frames from an episode, in chunks of duration = fMRI TR.
+    """
+    n_frames = int(STUDY_PARAMS["tr"] * STUDY_PARAMS["fps"])
+    rs_height, rs_width = rs_dim
+    target_height, target_width = target_dim
+
+    # temporal downsampling, rescale [-0.5, 0.5]
+    frames = (
+        np.asarray(
+            chunk_frames[:n_frames],
+            dtype=dtype,
+        )[:: args.time_downsample]
+    )
+
+    if args.normalize:
+        frames = (frames / 255.0) - 0.5
+
+    """pytorch / chainer input dimension order:
+    Channel x Frame x Height x Width
+    F, H, W, C -> C, F, H, W
+    """
+    chunk_array = np.transpose(
+        frames,
+        [3, 0, 1, 2],
+    )
+
+    if not chunk_array.shape == (
+        3,
+        int(np.ceil(n_frames / args.time_downsample)),
+        rs_height,
+        rs_width,
+    ):
+        raise ValueError
+
+    if strategy == "crop":
+        edge = int(np.floor((rs_width - target_width) / 2))
+        chunk_array = chunk_array[:, :, :, edge : target_width + edge]
+
+    elif strategy == "pad":
+        chunk_array = pad_array(
+            chunk_array,
+            n_frames,
+            rs_dim,
+            target_dim,
+            dtype,
+            args,
+        )
+
+    if not chunk_array.shape == (
+        3,
+        int(np.ceil(n_frames / args.time_downsample)),
+        target_height,
+        target_width,
+    ):
+        raise ValueError
+
+    return chunk_array
+
+
+def save_chunks(
+    outfile_name: str,
+    episode: str,
+    chunk_dict: dict,
+    comp_args: dict,
+) -> None:
+    """.
+
+    Exports episode's chunks of frames as numbered arrays in .h5 file.
+    """
+    flag = "a" if Path(outfile_name).exists() else "w"
+    with h5py.File(outfile_name, flag) as f:
+        group = f.create_group(episode)
+
+        for c in chunk_dict:
+            group.create_dataset(
+                f"{str(c).zfill(3)}",
+                data=chunk_dict[c],
+                **comp_args,
+            )
+
+
+def extract_features(
+    season: str,
+    episode: str,
+    mkv_path: str,
+    strategy: str,
+    rs_dim: tuple,
+    target_dim: tuple,
+    dtype: int,
+    outfile_name: str,
+    comp_args: dict,
+    args: argparse.Namespace,
+) -> None:
+    """.
+
+    Extract frames from an episode, in chunks of duration = 1 fMRI TR.
+    """
+    n_frames_float = STUDY_PARAMS["tr"] * STUDY_PARAMS["fps"]
+    rs_height, rs_width = rs_dim
+
+    cap = cv2.VideoCapture(mkv_path)
+    if args.verbose:
+        print(
+            f"Episode {episode} frame count: "
+            f"{int(cap.get(cv2.CAP_PROP_FRAME_COUNT))}",
+        )
+
+    chunk_dict = {}
+    chunk_count = 0
+    frame_count = 0
+    success = True
+
+    while success:
+        chunk_frames = []
+        if args.verbose:
+            print(chunk_count, frame_count)
+
+        while frame_count < int((chunk_count + 1) * n_frames_float):
+            success, image = cap.read()
+
+            if success:
+                # flip color channels to be RGB (cv2)
+                chunk_frames.append(
+                    np.floor(
+                        resize(
+                            image[..., ::-1],
+                            (rs_height, rs_width),
+                            preserve_range=True,
+                            anti_aliasing=True,
+                        ),
+                    ).astype("uint8"),
+                )
+            frame_count += 1
+
+        # only process complete chunks
+        if success:
+            chunk_dict[chunk_count] = make_array(
+                chunk_frames,
+                strategy,
+                dtype,
+                rs_dim,
+                target_dim,
+                args,
+            )
+            chunk_count += 1
+
+    cap.release()
+    save_chunks(outfile_name, episode, chunk_dict, comp_args)
+
+
+def process_episodes(
+    season: str,
+    strategy: str,
+    rs_dim: tuple,
+    target_dim: tuple,
+    args: argparse.Namespace,
+) -> None:
+    """.
+
+    Extract frames from season's episodes.
+    """
+    # set output params
+    dtype, comp_args, outfile_name = set_output(
+        season,
+        strategy,
+        target_dim,
+        args,
+    )
+
+    episode_list = list_episodes(args.idir, season, outfile_name, args.verbose)
+
+    for episode in tqdm(episode_list, desc="processing .mkv files"):
+        mkv_path = f"{args.idir}/{season}/friends_{episode}.mkv"
+
+        if Path(mkv_path).exists():
+            extract_features(
+                season,
+                episode,
+                mkv_path,
+                strategy,
+                rs_dim,
+                target_dim,
+                dtype,
+                outfile_name,
+                comp_args,
+                args,
+            )
 
 
 def main() -> None:
@@ -294,216 +558,21 @@ def main() -> None:
     is 44, results in 1 kept movie frame per fMRI TR.
     """
     args = get_arguments()
-    dtype = "float32" if args.normalize else "uint8"
 
-    print(vars(args))
-    (
-        strategy,
-        rs_height,
-        rs_width,
-        target_height,
-        target_width,
-    ) = set_target_dims(
-        args.resize_strategy,
-        args.target_height,
-        args.target_width,
-    )
-    print(
-        f"\nResize Strategy: {strategy.upper()} \nResized frame dimensions in "
-        f"pixels: h = {target_height}, w = {target_width}.\n",
-    )
+    # get resizing parameters
+    strategy, rs_dim, target_dim = set_target_dims(args)
 
-    n_frames_float = STUDY_PARAMS["tr"] * STUDY_PARAMS["fps"]
-    n_frames = int(n_frames_float)
-    print(
-        "Downsampled frames-per-second rate: "
-        f"{STUDY_PARAMS['fps']/ args.time_downsample} (orig = 29.97 fps)",
-    )
-    print(
-        f"Final arrays include {int(n_frames/args.time_downsample)} frames "
-        "per chunk of 1.49s (one fMRI TR).\n",
-    )
-
-    seasons = (
-        args.seasons
-        if args.seasons is not None
-        else [x.split("/")[-1] for x in sorted(glob.glob(f"{args.idir}/s*"))]
-    )
-    print("Seasons : ", seasons)
+    # Get list of seasons to process
+    seasons = list_seasons(args.idir, args.verbose, args.seasons)
 
     for season in seasons:
-        episode_list = [
-            x.split("/")[-1].split(".")[0][-7:]
-            for x in sorted(glob.glob(f"{args.idir}/{season}/friends_s*.mkv"))
-            if x.split("/")[-1].split(".")[0][-1] in ["a", "b", "c", "d"]
-        ]
-        if args.verbose:
-            print(episode_list)
-
-        """
-        Set .h5 array compression parameters
-        Doc here: https://docs.h5py.org/en/stable/high/dataset.html#filter-pipeline
-        """
-        compress_details = ""
-        comp_args = {}
-        if args.compression is not None:
-            compress_details = f"_{args.compression}"
-            comp_args["compression"] = args.compression
-            if args.compression == "gzip":
-                compress_details += f"_level-{args.compression_opts}"
-                comp_args["compression_opts"] = args.compression_opts
-
-        pv = f"_padval-{args.padvox_intensity}" if strategy == "pad" else ""
-        out_file = (
-            f"{args.odir}/friends_{season}_frames_h-{target_height}_"
-            f"w-{target_width}_{strategy.upper()}{pv}_ds-{args.time_downsample}"
-            f"{compress_details}.h5"
+        process_episodes(
+            season,
+            strategy,
+            rs_dim,
+            target_dim,
+            args,
         )
-
-        """
-        To re-launch an interrupted script
-        """
-        processed_episodes = []
-        if Path(out_file).exists():
-            season_h5_file = h5py.File(out_file, "r")
-            processed_episodes = list(season_h5_file.keys())
-            if args.verbose:
-                print("Processed episodes : ", processed_episodes)
-            season_h5_file.close()
-
-        for episode in tqdm(episode_list, desc="processing .mkv files"):
-            if episode not in processed_episodes:
-                mkv_path = f"{args.idir}/{season}/friends_{episode}.mkv"
-                if Path(mkv_path).exists():
-                    cap = cv2.VideoCapture(mkv_path)
-                    if args.verbose:
-                        print(
-                            f"Episode {episode} frame count: "
-                            f"{int(cap.get(cv2.CAP_PROP_FRAME_COUNT))}",
-                        )
-                    chunk_dict = {}
-
-                    chunk_count = 0
-                    frame_count = 0
-                    success = True
-
-                    while success:
-                        chunk_frames = []
-                        if args.verbose:
-                            print(chunk_count, frame_count)
-
-                        while frame_count < int((chunk_count + 1) * n_frames_float):
-                            success, image = cap.read()
-
-                            if success:
-                                # flip color channels to be RGB (cv2)
-                                chunk_frames.append(
-                                    np.floor(
-                                        resize(
-                                            image[..., ::-1],
-                                            (rs_height, rs_width),
-                                            preserve_range=True,
-                                            anti_aliasing=True,
-                                        ),
-                                    ).astype("uint8"),
-                                )
-                            frame_count += 1
-
-                        # only process complete chunks
-                        if success:
-                            # temporal downsampling, rescale [-0.5, 0.5]
-                            frames = (
-                                np.asarray(
-                                    chunk_frames[:n_frames],
-                                    dtype=dtype,
-                                )[:: args.time_downsample]
-                            )
-                            if args.normalize:
-                                frames = (frames / 255.0) - 0.5
-
-                            """pytorch / chainer input dimension order:
-                            Channel x Frame x Height x Width
-                            F, H, W, C -> C, F, H, W
-                            """
-                            chunk_array = np.transpose(
-                                frames,
-                                [3, 0, 1, 2],
-                            )
-                            # must be color channel
-                            if not chunk_array.shape[0] == 3:
-                                raise ValueError
-                            if not chunk_array.shape[1] == np.ceil(
-                                n_frames / args.time_downsample,
-                            ):
-                                raise ValueError
-                            if not chunk_array.shape[2] == rs_height:
-                                raise ValueError
-                            if not chunk_array.shape[3] == rs_width:
-                                raise ValueError
-
-                            if strategy == "crop":
-                                edge = int(
-                                    np.floor((rs_width - target_width) / 2),
-                                )
-                                chunk_array = chunk_array[
-                                    :,
-                                    :,
-                                    :,
-                                    edge : target_width + edge,
-                                ]
-
-                            elif strategy == "pad":
-                                padvox_val = args.padvox_intensity
-                                if args.normalize:
-                                    padvox_val = (padvox_val / 255.0) - 0.5
-                                full_array = np.full(
-                                    (
-                                        3,
-                                        int(n_frames / args.time_downsample),
-                                        target_height,
-                                        target_width,
-                                    ),
-                                    padvox_val,
-                                    dtype=dtype,
-                                )
-                                edge = int(
-                                    np.floor((target_height - rs_height) / 2),
-                                )
-                                full_array[
-                                    :,
-                                    :,
-                                    edge : rs_height + edge,
-                                    :,
-                                ] = chunk_array
-                                chunk_array = full_array
-
-                            if not chunk_array.shape[0] == 3:
-                                raise ValueError
-                            if not chunk_array.shape[1] == np.ceil(
-                                n_frames / args.time_downsample,
-                            ):
-                                raise ValueError
-                            if not chunk_array.shape[2] == target_height:
-                                raise ValueError
-                            if not chunk_array.shape[3] == target_width:
-                                raise ValueError
-
-                            chunk_dict[chunk_count] = chunk_array
-
-                            chunk_count += 1
-
-                    flag = "a" if Path(out_file).exists() else "w"
-                    with h5py.File(out_file, flag) as f:
-                        group = f.create_group(episode)
-
-                        for c in chunk_dict:
-                            group.create_dataset(
-                                f"{str(c).zfill(3)}",
-                                data=chunk_dict[c],
-                                **comp_args,
-                            )
-
-                    cap.release()
 
 
 if __name__ == "__main__":
