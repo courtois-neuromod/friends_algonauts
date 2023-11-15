@@ -128,6 +128,8 @@ def set_output(
 
     Set output parameters.
     """
+    is_mono = "stereo" if args.stereo else "mono"
+
     compress_details = ""
     comp_args = {}
     if args.compression is not None:
@@ -189,8 +191,8 @@ def save_segments(
 
     Exports episode's chunks of soundwaves as numbered arrays in .h5 file.
     """
-    flag = "a" if Path(out_file).exists() else "w"
-    with h5py.File(out_file, flag) as f:
+    flag = "a" if Path(outfile_name).exists() else "w"
+    with h5py.File(outfile_name, flag) as f:
         group = f.create_group(episode)
 
         for i in range(len(audio_segments)):
@@ -215,7 +217,6 @@ def extract_features(
     """
     n_frames = int(STUDY_PARAMS["tr"] * args.rate_resample)
     mono = not args.stereo
-    is_mono = "stereo" if args.stereo else "mono"
 
     # extract audio .wav from .mkv
     clip = VideoFileClip(mkv_path)
