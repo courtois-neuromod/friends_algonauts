@@ -186,16 +186,17 @@ def build_audio_visual(
 
 def build_text(
     idir: str,
-    #feature_list: list,
     runs: list,
     run_lengths: list,
     duration: int,
 ) -> np.array:
 
-    feature_list = ['text_pooled', 'text_token']
-
-    x_list = []
     dur = duration - 1
+    feature_list = ['text_pooled', 'text_token']
+    x_dict = {
+        "text_pooled": [],
+        "text_token": [],
+    }
 
     for run, rl in zip(runs, run_lengths):
         season: str = run[2]
@@ -205,34 +206,34 @@ def build_text(
             "features_text_gzip_level-4.h5"
         )
 
-        run_input = {}
         with h5py.File(h5_path, "r") as f:
             for feat_type in feature_list:
-                run_input[feat_type] = np.array(f[run][feat_type])
+                run_data = np.array(f[run][feat_type])[dur: dur+rl, :]
 
-        run_list = []
-        for feat_type in feature_list:
-            run_data = run_input[feat_type][dur: dur+rl, :]
+                # pad features array in case fewer text TRs than for BOLD data
+                dims = run_data.shape
+                rsize = rl*dims[1] if len(dims) == 2 else rl*dims[1]*dims[2]
+                run_array = np.repeat(np.nan, rsize).reshape((rl,) + dims[1:])
+                run_array[:dims[0]] = run_data
 
-            # pad features array in case fewer text TRs than for BOLD data
-            dims = run_data.shape
-            rsize = rl*dims[1] if len(dims) == 2 else rl*dims[1]*dims[2]
-            run_array = np.repeat(np.nan, rsize).reshape((rl,) + dims[1:])
-            run_array[:dims[0]] = run_data
+                x_dict[feat_type].append(run_data)
 
-            run_list.append(
-                np.nan_to_num(
-                    stats.zscore(
-                        run_array.reshape((-1, dims[-1])),
-                        nan_policy="omit",
-                        axis=0,
-                    )
-                ).reshape(run_array.shape).reshape(rl, -1).astype('float32')
-            )
+    x_list = []
+    for feat_type in feature_list:
+        feat_data = np.concatenate(x_dict[feat_type], axis=0)
+        dims = feat_data.shape
 
-        x_list.append(np.concatenate(run_list, axis=1))
+        x_list.append(
+            np.nan_to_num(
+                stats.zscore(
+                    feat_data.reshape((-1, dims[-1])),
+                    nan_policy="omit",
+                    axis=0,
+                )
+            ).reshape(feat_data.shape).reshape(dims[0], -1).astype('float32')
+        )
 
-    return np.concatenate(x_list, axis=0)
+    return np.concatenate(x_list, axis=1)
 
 
 def build_input(
