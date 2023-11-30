@@ -124,7 +124,10 @@ def split_episodes(
 
     # Remaining runs assigned to train and validation sets
     r = np.random.RandomState(random_state)  # select season for validation set
-    val_season = r.choice(["s01", "s02", "s04", "s05", "s06"], 1)[0]
+    if subject_id == 'sub-04':
+        val_season = r.choice(["s01", "s02", "s04"], 1)[0]
+    else:
+        val_season = r.choice(["s01", "s02", "s04", "s05", "s06"], 1)[0]
     val_set = [x for x in sub_h5 if x[:3] == val_season]
     train_set = sorted([x for x in sub_h5 if x[:3] not in ['s03', val_season]])
 
@@ -155,7 +158,7 @@ def build_audio_visual(
 
         h5_path = Path(
             f"{idir}/friends_s{season}_"
-            "features_visual_audio__gzip_level-4.h5"
+            "features_visual_audio_gzip_level-4.h5"
         )
 
         run_input = {}
@@ -181,8 +184,55 @@ def build_audio_visual(
     return np.concatenate(x_list, axis=0)
 
 
-def build_text(idir, runs, run_lengths):
-    pass
+def build_text(
+    idir: str,
+    #feature_list: list,
+    runs: list,
+    run_lengths: list,
+    duration: int,
+) -> np.array:
+
+    feature_list = ['text_pooled', 'text_token']
+
+    x_list = []
+    dur = duration - 1
+
+    for run, rl in zip(runs, run_lengths):
+        season: str = run[2]
+
+        h5_path = Path(
+            f"{idir}/friends_s{season}_"
+            "features_text_gzip_level-4.h5"
+        )
+
+        run_input = {}
+        with h5py.File(h5_path, "r") as f:
+            for feat_type in feature_list:
+                run_input[feat_type] = np.array(f[run][feat_type])
+
+        run_list = []
+        for feat_type in feature_list:
+            run_data = run_input[feat_type][dur: dur+rl, :]
+
+            # pad features array in case fewer text TRs than for BOLD data
+            dims = run_data.shape
+            rsize = rl*dims[1] if len(dims) == 2 else rl*dims[1]*dims[2]
+            run_array = np.repeat(np.nan, rsize).reshape((rl,) + dims[1:])
+            run_array[:dims[0]] = run_data
+
+            run_list.append(
+                np.nan_to_num(
+                    stats.zscore(
+                        run_array.reshape((-1, dims[-1])),
+                        nan_policy="omit",
+                        axis=0,
+                    )
+                ).reshape(run_array.shape).reshape(rl, -1).astype('float32')
+            )
+
+        x_list.append(np.concatenate(run_list, axis=1))
+
+    return np.concatenate(x_list, axis=0)
 
 
 def build_input(
@@ -216,6 +266,7 @@ def build_input(
                 idir,
                 runs,
                 run_lengths,
+                duration,
             ),
         )
 
