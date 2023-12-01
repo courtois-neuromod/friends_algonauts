@@ -124,6 +124,7 @@ def split_episodes(
 
     # Remaining runs assigned to train and validation sets
     r = np.random.RandomState(random_state)  # select season for validation set
+
     if subject_id == 'sub-04':
         val_season = r.choice(["s01", "s02", "s04"], 1)[0]
     else:
@@ -252,7 +253,7 @@ def build_input(
 
     x_list = []
 
-    av_modalities = [x for x in modalities if x != "text"]
+    av_modalities = [x for x in modalities if x in ["vision", "audio"]]
     if len(av_modalities) > 0:
         x_list.append(
             build_audio_visual(
