@@ -153,6 +153,7 @@ def build_audio_visual(
     """
 
     x_list = []
+
     for run, rl in zip(runs, run_lengths):
         season: str = run[2]
 
@@ -211,12 +212,13 @@ def build_text(
                 run_data = np.array(f[run][feat_type])[dur: dur+rl, :]
 
                 # pad features array in case fewer text TRs than for BOLD data
-                dims = run_data.shape
-                rsize = rl*dims[1] if len(dims) == 2 else rl*dims[1]*dims[2]
-                run_array = np.repeat(np.nan, rsize).reshape((rl,) + dims[1:])
-                run_array[:dims[0]] = run_data
+                rdims = run_data.shape
 
-                x_dict[feat_type].append(run_data)
+                rsize = rl*rdims[1] if len(rdims) == 2 else rl*rdims[1]*rdims[2]
+                run_array = np.repeat(np.nan, rsize).reshape((rl,) + rdims[1:])
+                run_array[:rdims[0]] = run_data
+
+                x_dict[feat_type].append(run_array)
 
     x_list = []
     for feat_type in feature_list:
@@ -230,7 +232,7 @@ def build_text(
                     nan_policy="omit",
                     axis=0,
                 )
-            ).reshape(feat_data.shape).reshape(dims[0], -1).astype('float32')
+            ).reshape(dims).reshape(dims[0], -1).astype('float32')
         )
 
     return np.concatenate(x_list, axis=1)
@@ -250,11 +252,12 @@ def build_input(
 
     x_list = []
 
-    if "vision" or "audio" in modalities:
+    av_modalities = [x for x in modalities if x != "text"]
+    if len(av_modalities) > 0:
         x_list.append(
             build_audio_visual(
                 idir,
-                modalities,
+                av_modalities,
                 runs,
                 run_lengths,
                 duration,
