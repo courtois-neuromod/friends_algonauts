@@ -124,7 +124,11 @@ def split_episodes(
 
     # Remaining runs assigned to train and validation sets
     r = np.random.RandomState(random_state)  # select season for validation set
-    val_season = r.choice(["s01", "s02", "s04", "s05", "s06"], 1)[0]
+
+    if subject_id == 'sub-04':
+        val_season = r.choice(["s01", "s02", "s04"], 1)[0]
+    else:
+        val_season = r.choice(["s01", "s02", "s04", "s05", "s06"], 1)[0]
     val_set = [x for x in sub_h5 if x[:3] == val_season]
     train_set = sorted([x for x in sub_h5 if x[:3] not in ['s03', val_season]])
 
@@ -150,12 +154,13 @@ def build_audio_visual(
     """
 
     x_list = []
+
     for run, rl in zip(runs, run_lengths):
         season: str = run[2]
 
         h5_path = Path(
             f"{idir}/friends_s{season}_"
-            "features_visual_audio__gzip_level-4.h5"
+            "features_visual_audio_gzip_level-4.h5"
         )
 
         run_input = {}
@@ -181,8 +186,57 @@ def build_audio_visual(
     return np.concatenate(x_list, axis=0)
 
 
-def build_text(idir, runs, run_lengths):
-    pass
+def build_text(
+    idir: str,
+    runs: list,
+    run_lengths: list,
+    duration: int,
+) -> np.array:
+
+    dur = duration - 1
+    feature_list = ['text_pooled', 'text_token']
+    x_dict = {
+        "text_pooled": [],
+        "text_token": [],
+    }
+
+    for run, rl in zip(runs, run_lengths):
+        season: str = run[2]
+
+        h5_path = Path(
+            f"{idir}/friends_s{season}_"
+            "features_text_gzip_level-4.h5"
+        )
+
+        with h5py.File(h5_path, "r") as f:
+            for feat_type in feature_list:
+                run_data = np.array(f[run][feat_type])[dur: dur+rl, :]
+
+                # pad features array in case fewer text TRs than for BOLD data
+                rdims = run_data.shape
+
+                rsize = rl*rdims[1] if len(rdims) == 2 else rl*rdims[1]*rdims[2]
+                run_array = np.repeat(np.nan, rsize).reshape((rl,) + rdims[1:])
+                run_array[:rdims[0]] = run_data
+
+                x_dict[feat_type].append(run_array)
+
+    x_list = []
+    for feat_type in feature_list:
+        feat_data = np.concatenate(x_dict[feat_type], axis=0)
+        dims = feat_data.shape
+
+        x_list.append(
+            np.nan_to_num(
+                stats.zscore(
+                    feat_data.reshape((-1, dims[-1])),
+                    nan_policy="omit",
+                    axis=0,
+                )
+            ).reshape(dims).reshape(dims[0], -1).astype('float32')
+        )
+
+    return np.concatenate(x_list, axis=1)
 
 
 def build_input(
@@ -199,11 +253,12 @@ def build_input(
 
     x_list = []
 
-    if "vision" or "audio" in modalities:
+    av_modalities = [x for x in modalities if x in ["vision", "audio"]]
+    if len(av_modalities) > 0:
         x_list.append(
             build_audio_visual(
                 idir,
-                modalities,
+                av_modalities,
                 runs,
                 run_lengths,
                 duration,
@@ -216,6 +271,7 @@ def build_input(
                 idir,
                 runs,
                 run_lengths,
+                duration,
             ),
         )
 
